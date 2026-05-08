@@ -1,0 +1,88 @@
+sources:
+  pm2_logs:
+    path: "~/.pm2/logs/"
+    type: log
+    enabled: true
+  docker_logs:
+    command: "docker logs"
+    type: log
+    enabled: true
+  zsh_history:
+    path: "~/.zsh_history"
+    type: shell
+    enabled: true
+  claude_data:
+    path: "~/.claude/"
+    type: chat
+    enabled: true
+  warp_data:
+    path: "~/Library/Application Support/dev.warp.Warp-Stable/"
+    type: chat
+    enabled: true
+  sinkia_project:
+    path: "~/sinkia/"
+    type: code
+    enabled: true
+  hermetic_mobile:
+    path: "~/hermetic-mobile/"
+    type: code
+    enabled: true
+  local_claude_code:
+    path: "~/local-claude-code/"
+    type: code
+    enabled: true
+  documents:
+    paths:
+      - "~/Documents/"
+      - "~/Desktop/"
+      - "~/Downloads/"
+    extensions: [".md", ".txt", ".pdf", ".docx", ".xlsx"]
+    type: doc
+    enabled: true
+  apps:
+    commands:
+      - "ls /Applications/"
+      - "brew list"
+      - "brew list --cask"
+    type: system
+    enabled: true
+  macos_logs:
+    path: "/var/log/"
+    type: log
+    enabled: false
+  services:
+    commands:
+      - "pm2 jlist"
+      - "docker ps --format json"
+      - "brew services list"
+    type: system
+    enabled: true
+  openclaw:
+    path: "~/.openclaw/"
+    type: system
+    enabled: true
+  skills:
+    path: "~/.claude/skills/"
+    type: config
+    enabled: true
+  launch_agents:
+    path: "~/Library/LaunchAgents/"
+    type: config
+    enabled: true
+  cloudflare_tunnel:
+    path: "~/.cloudflared/"
+    type: config
+    enabled: true
+
+database:
+  path: "~/sinkia-memory/data/memory.db"
+
+embeddings:
+  provider: ollama
+  url: "http://localhost:11434"
+  model: "nomic-embed-text"
+
+indexing:
+  interval_minutes: 30
+  chunk_size: 500
+  chunk_overlap: 50
