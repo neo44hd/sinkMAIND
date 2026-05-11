@@ -26,10 +26,11 @@ def get_ollama_config() -> dict:
     return config.get("embeddings", {})
 
 
-from typing import List, Optional
+from typing import List, Optional, Tuple
+
 
 def get_embedding(text: str) -> Optional[List[float]]:
-    """Get embedding vector from Ollama for a text string."""
+    """Get embedding vector from Ollama for a single text string."""
     emb_config = get_ollama_config()
     url = emb_config.get("url", "http://localhost:11434")
     model = emb_config.get("model", "nomic-embed-text")
@@ -48,6 +49,37 @@ def get_embedding(text: str) -> Optional[List[float]]:
         return None
 
 
+def get_embeddings_batch(texts: List[str]) -> List[Optional[List[float]]]:
+    """Get embeddings for multiple texts in a single Ollama API call.
+    
+    Uses the /api/embed endpoint (Ollama >=0.22) which accepts an array of inputs.
+    Returns a list of embedding vectors (or None for each failed text).
+    """
+    if not texts:
+        return []
+
+    emb_config = get_ollama_config()
+    url = emb_config.get("url", "http://localhost:11434")
+    model = emb_config.get("model", "nomic-embed-text")
+
+    try:
+        resp = requests.post(
+            f"{url}/api/embed",
+            json={"model": model, "input": texts},
+            timeout=120,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        embeddings_list = data.get("embeddings", [])
+        # Pad with None if fewer embeddings returned than requested
+        while len(embeddings_list) < len(texts):
+            embeddings_list.append(None)
+        return embeddings_list
+    except Exception as e:
+        print(f"  ⚠ Error obteniendo batch embeddings: {e}")
+        return [None] * len(texts)
+
+
 def cosine_similarity(vec_a: list[float], vec_b: list[float]) -> float:
     """Calculate cosine similarity between two vectors using standard math."""
     dot = sum(a * b for a, b in zip(vec_a, vec_b))
@@ -58,30 +90,61 @@ def cosine_similarity(vec_a: list[float], vec_b: list[float]) -> float:
     return dot / (mag_a * mag_b)
 
 
-def generate_and_store_embeddings(batch_size: int = 10):
-    """Generate embeddings for all documents that don't have one yet."""
-    docs = database.get_documents_without_embeddings(limit=10000)
+def generate_and_store_embeddings(batch_size: int = 10, max_docs: int = 100, embed_batch: int = 20):
+    """Generate embeddings for documents that don't have one yet.
+    
+    Uses Ollama batch embed API for efficiency — processes embed_batch texts
+    per single HTTP request, and writes to DB in bulk transactions.
+    
+    Args:
+        batch_size: Print progress every N docs
+        max_docs: Maximum docs to process in one call (default 100 for incremental)
+        embed_batch: Number of texts sent per Ollama API call (default 20)
+    """
+    docs = database.get_documents_without_embeddings(limit=max_docs)
     if not docs:
         print("  ✅ Todos los documentos ya tienen embeddings")
         return 0
 
     total = len(docs)
-    print(f"  Generando embeddings para {total} documentos...")
+    print(f"  Generando embeddings para {total} documentos (embed_batch={embed_batch})...")
 
     count = 0
-    for i, doc in enumerate(docs):
-        # Truncate content to avoid huge payloads
-        content = doc["content"][:1000]
-        embedding = get_embedding(content)
-        if embedding:
-            database.update_embedding(doc["id"], embedding)
-            count += 1
+    errors = 0
 
-        if (i + 1) % batch_size == 0:
-            print(f"  Progreso: {i + 1}/{total} embeddings generados")
-            time.sleep(1)  # Don't overwhelm Ollama
+    # Process in embed_batch chunks for Ollama API efficiency
+    for chunk_start in range(0, total, embed_batch):
+        chunk = docs[chunk_start:chunk_start + embed_batch]
+        
+        # Prepare texts (truncated to 500 chars for semantic meaning)
+        texts = [doc["content"][:500] for doc in chunk]
+        ids = [doc["id"] for doc in chunk]
+        
+        # Get embeddings in batch
+        embeddings_list = get_embeddings_batch(texts)
+        
+        # Collect successful results for bulk DB write
+        bulk_updates = []
+        for doc_id, embedding in zip(ids, embeddings_list):
+            if embedding:
+                bulk_updates.append((doc_id, embedding))
+                count += 1
+            else:
+                errors += 1
+        
+        # Batch write to DB
+        if bulk_updates:
+            database.update_embeddings_batch(bulk_updates)
+        
+        # Progress reporting
+        processed = min(chunk_start + embed_batch, total)
+        if processed % batch_size == 0 or processed == total:
+            print(f"  Progreso: {processed}/{total} embeddings ({errors} errores)")
+        
+        # Throttle to avoid overloading Ollama
+        time.sleep(0.3)
 
-    print(f"  ✅ {count}/{total} embeddings generados")
+    print(f"  ✅ {count}/{total} embeddings generados ({errors} errores)")
     return count
 
 

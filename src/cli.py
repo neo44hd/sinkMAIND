@@ -178,7 +178,9 @@ def search(query, semantic, hybrid, app, doc_type, cat, level, since, until,
 @click.option("--source", help="Indexar una fuente específica")
 @click.option("--status", is_flag=True, help="Mostrar fuentes configuradas")
 @click.option("--embeddings", "gen_embeddings", is_flag=True, help="Generar embeddings para documentos sin embedding")
-def index(index_all, source, status, gen_embeddings):
+@click.option("--max-docs", default=500, type=int, help="Máximo documentos a procesar (default 500)")
+@click.option("--embed-batch", default=20, type=int, help="Textos por petición Ollama (default 20)")
+def index(index_all, source, status, gen_embeddings, max_docs, embed_batch):
     """Indexar fuentes de datos."""
     database.init_db()
 
@@ -201,7 +203,16 @@ def index(index_all, source, status, gen_embeddings):
         return
 
     if gen_embeddings:
-        embeddings.generate_and_store_embeddings()
+        total_done = 0
+        while True:
+            count = embeddings.generate_and_store_embeddings(
+                batch_size=50, max_docs=max_docs, embed_batch=embed_batch
+            )
+            total_done += count
+            if count == 0:
+                break
+            console.print(f"[green]Lote completado: {total_done} embeddings totales generados[/green]")
+        console.print(f"[bold green]✅ Embeddings completados: {total_done} generados en total[/bold green]")
         return
 
     if index_all:

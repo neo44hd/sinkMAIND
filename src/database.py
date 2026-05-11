@@ -5,7 +5,7 @@ import json
 import os
 import sqlite3
 from datetime import datetime
-from typing import Any, Optional, List, Dict
+from typing import Any, Optional, List, Dict, Tuple
 
 
 DB_PATH = os.path.expanduser("~/sinkia-memory/data/memory.db")
@@ -259,11 +259,30 @@ def get_documents_without_embeddings(limit: int = 100) -> List[dict]:
 
 
 def update_embedding(doc_id: int, embedding: list[float]):
-    """Store embedding for a document."""
+    """Store embedding for a single document."""
     conn = _get_conn()
     conn.execute("UPDATE documents SET embedding = ? WHERE id = ?", (json.dumps(embedding), doc_id))
     conn.commit()
     conn.close()
+
+
+def update_embeddings_batch(updates: List[Tuple[int, list]]):
+    """Bulk-update embeddings for multiple documents in a single transaction.
+    
+    Args:
+        updates: List of (doc_id, embedding_vector) tuples
+    """
+    if not updates:
+        return
+    conn = _get_conn()
+    try:
+        conn.executemany(
+            "UPDATE documents SET embedding = ? WHERE id = ?",
+            [(json.dumps(emb), doc_id) for doc_id, emb in updates]
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def get_documents_with_embeddings(filters: dict = None, limit: int = 1000) -> List[dict]:

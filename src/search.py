@@ -28,32 +28,30 @@ def hybrid_search(query: str, filters: dict = None, limit: int = 20) -> List[dic
     rrf_scores = {}
     k = 60  # RRF constant
 
+    # Separate storage: scores dict and docs dict
+    scores = {}
+    docs_store = {}
+
     # Score textual results
     for rank, doc in enumerate(text_results):
         doc_id = doc["id"]
-        rrf_scores[doc_id] = rrf_scores.get(doc_id, 0) + 1.0 / (k + rank + 1)
-        if doc_id not in rrf_scores or "_doc" not in rrf_scores:
-            rrf_scores[doc_id] = rrf_scores.get(doc_id, 0)
-        # Store the doc data
-        if f"_doc_{doc_id}" not in rrf_scores:
-            rrf_scores[f"_doc_{doc_id}"] = doc
+        scores[doc_id] = scores.get(doc_id, 0) + 1.0 / (k + rank + 1)
+        docs_store[doc_id] = doc
 
     # Score semantic results
     for rank, doc in enumerate(semantic_results):
         doc_id = doc["id"]
-        rrf_scores[doc_id] = rrf_scores.get(doc_id, 0) + 1.0 / (k + rank + 1)
-        # Store/overwrite doc data (semantic has score)
-        rrf_scores[f"_doc_{doc_id}"] = doc
+        scores[doc_id] = scores.get(doc_id, 0) + 1.0 / (k + rank + 1)
+        docs_store[doc_id] = doc  # semantic has score, overwrite
 
     # Sort by RRF score
-    doc_ids = [key for key in rrf_scores if not key.startswith("_doc_")]
-    doc_ids.sort(key=lambda x: rrf_scores[x], reverse=True)
+    doc_ids = sorted(scores.keys(), key=lambda x: scores[x], reverse=True)
 
     # Build result list
     results = []
     for doc_id in doc_ids[:limit]:
-        doc = rrf_scores.get(f"_doc_{doc_id}", {})
-        doc["score"] = round(rrf_scores[doc_id], 6)
+        doc = docs_store.get(doc_id, {})
+        doc["score"] = round(scores[doc_id], 6)
         doc.pop("embedding", None)
         results.append(doc)
 
